@@ -515,7 +515,7 @@ button{font-family:inherit;cursor:pointer;border:none;background:none}
 .blog-back-btn{display:inline-flex;align-items:center;gap:6px;font-size:.84rem;font-weight:600;color:var(--text-2);cursor:pointer;margin-bottom:20px;padding:8px 16px;border-radius:var(--r-sm);background:var(--bg);border:1px solid var(--border);transition:all .2s}
 .blog-back-btn:hover{color:var(--navy);border-color:var(--navy)}
 .china-news-list{display:grid;gap:16px}
-.china-news-card{background:#fff;border:1px solid var(--border);border-radius:var(--r-lg);padding:24px;display:flex;gap:20px;cursor:pointer;transition:all .25s}
+a.china-news-card,div.china-news-card{background:#fff;border:1px solid var(--border);border-radius:var(--r-lg);padding:24px;display:flex;gap:20px;cursor:pointer;transition:all .25s;text-decoration:none;color:inherit}
 .china-news-card:hover{border-color:var(--blue);box-shadow:var(--shadow-md);transform:translateY(-2px)}
 .china-news-icon{width:48px;height:48px;border-radius:var(--r-md);background:linear-gradient(135deg,#c62828,#e53935);display:flex;align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0}
 .china-news-body{flex:1;min-width:0}
@@ -1172,7 +1172,8 @@ const FIREBASE_DB_URL = 'https://uniword-e3b0d-default-rtdb.firebaseio.com';
 let _inquiriesCache = null; // null = not yet loaded, [] = loaded but empty
 let _firebaseEnabled = false; // will be set to true once first Firebase fetch succeeds
 let _contentOverrides = {}; // { lang: { key: value } } — admin이 수정한 콘텐츠
-let _adminTab = 'inquiries'; // 'inquiries' | 'content' — 어드민 패널 활성 탭
+let _adminTab = 'inquiries'; // 'inquiries' | 'leads' | 'content' | 'visitors'
+let _visitorStats = {data: null, loaded: false, raw: []};
 
 // Check if Firebase is configured (not the placeholder URL)
 function isFirebaseConfigured(){
@@ -2986,7 +2987,7 @@ function renderBlogHome(){
   const mainContent = `
   <div style="margin-bottom:36px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><h3 style="font-size:1rem;font-weight:800;color:var(--navy)">${t('blog_latest_china')}</h3><span onclick="navigateBlog('china')" style="font-size:.82rem;color:var(--blue);cursor:pointer;font-weight:600">${t('blog_view_all')}</span></div>
-    <div class="blog-posts-grid">${news.map(n=>`<div class="blog-post-card" onclick="n.url?window.open(n.url,'_blank'):navigateBlog('view-china',n.id)"><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:1.4rem">${n.icon}</span><span class="blog-post-cat china">${escHtml(n.tag)}</span></div><div class="blog-post-title">${escHtml(n.title)}</div><div class="blog-post-excerpt">${escHtml(n.excerpt.substring(0,80))}...</div><div class="blog-post-meta"><span>📅 ${n.date}</span></div></div>`).join('')}</div>
+    <div class="blog-posts-grid">${news.map(n=>`<a class="blog-post-card" href="${n.url||'https://www.ajunews.com/china'}" target="_blank" rel="noopener noreferrer"><div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:1.4rem">${n.icon}</span><span class="blog-post-cat china">${escHtml(n.tag)}</span></div><div class="blog-post-title">${escHtml(n.title)}</div><div class="blog-post-excerpt">${escHtml(n.excerpt.substring(0,80))}...</div><div class="blog-post-meta"><span>📅 ${n.date}</span></div></div>`).join('')}</div>
   </div>
   <div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><h3 style="font-size:1rem;font-weight:800;color:var(--navy)">${t('blog_recent_inquiry')}</h3><span onclick="navigateBlog('inquiry')" style="font-size:.82rem;color:var(--blue);cursor:pointer;font-weight:600">${t('blog_view_all')}</span></div>
@@ -3116,20 +3117,48 @@ function renderViewInquiry(){
 
 // ── CHINA NEWS ──
 function renderChinaNews(){
+  const refreshBtn = `<button onclick="fetchChinaNews(true)" style="display:inline-flex;align-items:center;gap:5px;padding:5px 14px;background:${chinaNewsLoading?'#e5e7eb':'#fff'};border:1px solid ${chinaNewsLoading?'#e5e7eb':'#c62828'};border-radius:var(--r-sm);color:${chinaNewsLoading?'#9ca3af':'#c62828'};font-size:.78rem;font-weight:700;cursor:${chinaNewsLoading?'not-allowed':'pointer'};transition:all .2s" ${chinaNewsLoading?'disabled':''}>\uD83D\uDD04 \uc0c8\ub85c\uace0\uce68</button>`;
+
+  const sectionHeader = `<div class="blog-section-header">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div>
+        <div class="blog-section-title">${t('blog_china_title')}</div>
+        <div class="blog-section-desc">${t('blog_china_desc')}</div>
+        <div style="margin-top:6px;font-size:.76rem;color:var(--text-3)">
+          \ucd9c\uc81c: <a href="https://www.ajunews.com/china" target="_blank" rel="noopener" style="color:#c62828;font-weight:600">\uc544\uc8fc\uacbd\uc81c \uc911\uad6d \ub274\uc2a4</a>
+          &nbsp;\u00b7&nbsp; \uc2e4\uc2dc\uac04 \uc5c5\ub370\uc774\ud2b8
+        </div>
+      </div>
+      <div style="flex-shrink:0;margin-top:4px">${refreshBtn}</div>
+    </div>
+  </div>`;
+
   let listHtml;
   if(chinaNewsLoading){
-    listHtml = `<div class="china-news-loading"><div class="china-news-spinner"></div><div style="font-size:.9rem;font-weight:600">아주경제 중국 뉴스를 불러오는 중...</div></div>`;
+    listHtml = `<div class="china-news-loading"><div class="china-news-spinner"></div><div style="font-size:.9rem;font-weight:600">\uc544\uc8fc\uacbd\uc81c \uc911\uad6d \ub274\uc2a4\ub97c \ubd88\ub7ec\uc624\ub294 \uc911...</div></div>`;
   } else if(!chinaNewsLoaded || chinaNewsData.length===0){
-    listHtml = `<div class="china-news-loading"><div style="font-size:2.2rem">📡</div><div style="font-size:.9rem;font-weight:600">뉴스를 불러올 수 없습니다</div><button onclick="fetchChinaNews(true)" style="margin-top:4px;padding:8px 22px;background:#c62828;color:#fff;border:none;border-radius:var(--r-sm);cursor:pointer;font-size:.84rem;font-weight:700">다시 시도</button></div>`;
+    listHtml = `<div class="china-news-loading"><div style="font-size:2.2rem">\uD83D\uDCE1</div><div style="font-size:.9rem;font-weight:600">\ub274\uc2a4\ub97c \ubd88\ub7ec\uc62c \uc218 \uc5c6\uc2b5\ub2c8\ub2e4</div><button onclick="fetchChinaNews(true)" style="margin-top:8px;padding:8px 22px;background:#c62828;color:#fff;border:none;border-radius:var(--r-sm);cursor:pointer;font-size:.84rem;font-weight:700">\ub2e4\uc2dc \uc2dc\ub3c4</button></div>`;
   } else {
-    listHtml = `<div class="china-news-list">${chinaNewsData.map(n=>{
+    const cards = chinaNewsData.map(n => {
       const imgHtml = n.image
-        ? `<img class="china-news-thumb" src="${escHtml(n.image)}" alt="" loading="lazy" onerror="this.style.display='none';this.nextSibling.style.display='flex'"><div class="china-news-thumb-placeholder" style="display:none">\u{1F1E8}\u{1F1F3}</div>`
-        : `<div class="china-news-thumb-placeholder">\u{1F1E8}\u{1F1F3}</div>`;
-      return `<div class="china-news-card" onclick="window.open('${escHtml(n.url||'#')}','_blank')">${imgHtml}<div class="china-news-body"><div style="margin-bottom:6px"><span class="china-news-tag">${escHtml(n.tag)}</span></div><div class="china-news-title">${escHtml(n.title)}</div><div class="china-news-excerpt">${escHtml(n.excerpt)}</div><div class="china-news-meta"><span>📅 ${escHtml(n.date)}</span><span style="color:#c62828;font-weight:600">원문 보기 ↗</span></div></div></div>`;
-    }).join('')}</div>`;
+        ? `<img class="china-news-thumb" src="${n.image}" alt="" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="china-news-thumb-placeholder" style="display:none">\uD83C\uDDE8\uD83C\uDDF3</div>`
+        : `<div class="china-news-thumb-placeholder">\uD83C\uDDE8\uD83C\uDDF3</div>`;
+      return `<a class="china-news-card" href="${n.url}" target="_blank" rel="noopener noreferrer">
+        ${imgHtml}
+        <div class="china-news-body">
+          <div style="margin-bottom:6px"><span class="china-news-tag">${escHtml(n.tag)}</span></div>
+          <div class="china-news-title">${escHtml(n.title)}</div>
+          <div class="china-news-excerpt">${escHtml(n.excerpt)}</div>
+          <div class="china-news-meta">
+            <span>\uD83D\uDCC5 ${escHtml(n.date)}</span>
+            <span style="color:#c62828;font-weight:600">\uc6d0\ubb38 \ubcf4\uae30 \u2197</span>
+          </div>
+        </div>
+      </a>`;
+    }).join('');
+    listHtml = `<div class="china-news-list">${cards}</div>`;
   }
-  return `<div class="blog-section-header"><div class="blog-section-title">${t('blog_china_title')}</div><div class="blog-section-desc">${t('blog_china_desc')}</div><div style="margin-top:6px;font-size:.76rem;color:var(--text-3)">출처: <a href="https://www.ajunews.com/china" target="_blank" style="color:#c62828;font-weight:600">아주경제 중국 뉴스</a> · 실시간 업데이트</div></div>${listHtml}`;
+  return sectionHeader + listHtml;
 }
 
 function renderViewChinaNews(){
@@ -3311,8 +3340,9 @@ function renderAdminPage(){
         ${tabBtn('inquiries','💬','문의 관리')}
         ${tabBtn('leads','📋','문의하기 고객')}
         ${tabBtn('content','📝','콘텐츠 편집')}
+        ${tabBtn('visitors','👥','방문자 통계')}
       </div>
-      ${_adminTab==='content' ? renderContentEditor() : _adminTab==='leads' ? renderLeadsPage() : renderInquiryManagement(inquiries,pendingCount,answeredCount)}
+      ${_adminTab==='visitors' ? renderVisitorStatsPage() : _adminTab==='content' ? renderContentEditor() : _adminTab==='leads' ? renderLeadsPage() : renderInquiryManagement(inquiries,pendingCount,answeredCount)}
     </div>
   </section>`;
 }
@@ -3688,45 +3718,51 @@ async function fetchStockData(force){
 
   // 프록시 목록 (순서대로 시도)
   const PROXIES = [
+    'https://corsproxy.io/?',
     'https://api.allorigins.win/raw?url=',
     'https://api.codetabs.com/v1/proxy?quest=',
   ];
 
   const fetchOne = async (idx) => {
     const {symbol, currency, decimals} = idx;
-    // ★ 핵심: symbol을 미리 인코딩하지 않고 그대로 붙여서 전체 URL을 한 번만 인코딩
-    const yahooUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/'
-                   + symbol
-                   + '?interval=1d&range=1d&includePrePost=false';
+    // query1 / query2 둘 다 시도 (하나가 막혀도 대체)
+    const yahooUrls = [
+      'https://query1.finance.yahoo.com/v8/finance/chart/' + symbol + '?interval=1d&range=1d&includePrePost=false',
+      'https://query2.finance.yahoo.com/v8/finance/chart/' + symbol + '?interval=1d&range=1d&includePrePost=false',
+    ];
 
     let json = null;
     let lastErr = null;
 
-    for(const proxy of PROXIES){
-      try {
-        const res = await fetch(proxy + encodeURIComponent(yahooUrl), {
-          cache: 'no-store',
-          signal: AbortSignal.timeout(8000)
-        });
-        if(!res.ok) throw new Error('HTTP '+res.status);
-        const text = await res.text();
-        json = JSON.parse(text);
-        break; // 성공 시 루프 종료
-      } catch(e) {
-        lastErr = e;
-        console.warn('[Stock] proxy failed:', proxy, symbol, e.message);
+    outer:
+    for(const yahooUrl of yahooUrls){
+      for(const proxy of PROXIES){
+        try {
+          const res = await fetch(proxy + encodeURIComponent(yahooUrl), {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(7000)
+          });
+          if(!res.ok) throw new Error('HTTP '+res.status);
+          const text = await res.text();
+          const parsed = JSON.parse(text);
+          // 유효한 응답인지 확인
+          if(parsed?.chart?.result?.[0]?.meta?.regularMarketPrice != null){
+            json = parsed;
+            break outer;
+          }
+          throw new Error('invalid response structure');
+        } catch(e) {
+          lastErr = e;
+          console.warn('[Stock]', proxy.split('?')[0], symbol, e.message);
+        }
       }
     }
 
-    if(!json) throw lastErr || new Error('all proxies failed');
+    if(!json) throw lastErr || new Error('all sources failed');
 
-    const meta = json?.chart?.result?.[0]?.meta;
-    if(!meta) throw new Error('no meta in response');
-
+    const meta = json.chart.result[0].meta;
     const price = meta.regularMarketPrice;
-    const prev  = meta.previousClose ?? meta.chartPreviousClose ?? 0;
-    if(price == null) throw new Error('no price');
-
+    const prev  = meta.previousClose ?? meta.chartPreviousClose ?? price;
     const change        = price - prev;
     const changePercent = prev ? (change / prev) * 100 : 0;
     const mTime         = meta.regularMarketTime;
@@ -3877,43 +3913,234 @@ function renderStockMarket(){
 function stockRefresh(){ fetchStockData(true); }
 
 
+// ── VISITOR TRACKING ──
+async function recordVisit(){
+  // 세션당 1회만 기록 (새로고침 시 중복 방지)
+  if(sessionStorage.getItem('uw_v')) return;
+  sessionStorage.setItem('uw_v', '1');
+
+  const now   = new Date();
+  const visit = {
+    date : now.toISOString().slice(0,10),       // YYYY-MM-DD
+    ts   : Date.now(),
+    hour : now.getHours(),
+  };
+
+  // localStorage (오프라인에서도 동작)
+  try {
+    const ls  = JSON.parse(localStorage.getItem('uw_visits')||'[]');
+    const cut = Date.now() - 90 * 86400000;     // 90일 이전 데이터 삭제
+    const trimmed = ls.filter(v => v.ts > cut);
+    trimmed.push(visit);
+    localStorage.setItem('uw_visits', JSON.stringify(trimmed));
+  } catch(e){}
+
+  // Firebase (배포 환경에서 크로스-디바이스 집계)
+  if(isFirebaseConfigured()){
+    try {
+      await fetch(FIREBASE_DB_URL + '/visits.json', {
+        method : 'POST',
+        headers: {'Content-Type':'application/json'},
+        body   : JSON.stringify(visit)
+      });
+    } catch(e){}
+  }
+}
+
+function loadVisitorStats(){
+  // 1) localStorage로 즉시 표시 (빠름)
+  const byDate = {};
+  try {
+    const ls = JSON.parse(localStorage.getItem('uw_visits')||'[]');
+    ls.forEach(v => { const d = v.date||'?'; byDate[d] = (byDate[d]||0)+1; });
+  } catch(e){}
+  _visitorStats = {data: byDate, loaded: true};
+  if(currentPage==='admin') render();
+
+  // 2) Firebase를 백그라운드에서 병합 (느려도 UI 블로킹 없음)
+  if(isFirebaseConfigured()){
+    fetch(FIREBASE_DB_URL + '/visits.json')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if(!data) return;
+        const merged = Object.assign({}, byDate);
+        const lsTs = new Set();
+        try { JSON.parse(localStorage.getItem('uw_visits')||'[]').forEach(v=>lsTs.add(v.ts)); } catch(e){}
+        Object.values(data).forEach(v => {
+          if(!lsTs.has(v.ts)){ const d=v.date||'?'; merged[d]=(merged[d]||0)+1; }
+        });
+        _visitorStats = {data: merged, loaded: true};
+        if(currentPage==='admin') render();
+      })
+      .catch(()=>{});
+  }
+}
+
+function renderVisitorStatsPage(){
+  if(!_visitorStats.loaded){
+    loadVisitorStats();
+    return `<div style="text-align:center;padding:60px 20px;color:#6b7280;font-size:.9rem">데이터 로딩 중...</div>`;
+  }
+
+  const byDate   = _visitorStats.data || {};
+  const today    = new Date().toISOString().slice(0,10);
+  const todayCnt = byDate[today] || 0;
+
+  // 최근 30일 (최신→과거)
+  const days = [];
+  for(let i = 0; i < 30; i++){
+    const d = new Date(); d.setDate(d.getDate()-i);
+    const key = d.toISOString().slice(0,10);
+    days.push({key, cnt: byDate[key]||0});
+  }
+  const total30  = days.reduce((s,d)=>s+d.cnt, 0);
+  const totalAll = Object.values(byDate).reduce((s,c)=>s+c, 0);
+
+  const rows = days.filter(d => d.cnt > 0 || d.key === today).map(d => {
+    const isToday = d.key === today;
+    return `<tr style="border-bottom:1px solid var(--border);background:${isToday?'#f0f9ff':''}">
+      <td style="padding:12px 20px;font-size:.88rem;color:${isToday?'var(--navy)':'#374151'};font-weight:${isToday?700:400}">
+        ${d.key}${isToday?` <span style="background:var(--navy);color:#fff;font-size:.6rem;padding:2px 7px;border-radius:8px;margin-left:4px">TODAY</span>`:''}
+      </td>
+      <td style="padding:12px 20px;text-align:center;font-size:1rem;font-weight:800;color:${isToday?'var(--navy)':'#1e293b'}">${d.cnt}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:24px">
+      <div style="background:linear-gradient(135deg,var(--navy),var(--blue));border-radius:12px;padding:24px 16px;text-align:center;color:#fff">
+        <div style="font-size:2.8rem;font-weight:900">${todayCnt}</div>
+        <div style="font-size:.82rem;opacity:.8;margin-top:5px">오늘 방문</div>
+        <div style="font-size:.7rem;opacity:.5;margin-top:2px">${today}</div>
+      </div>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:24px 16px;text-align:center">
+        <div style="font-size:2.2rem;font-weight:800;color:var(--navy)">${total30}</div>
+        <div style="font-size:.8rem;color:#6b7280;margin-top:6px">최근 30일</div>
+      </div>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:24px 16px;text-align:center">
+        <div style="font-size:2.2rem;font-weight:800;color:var(--navy)">${totalAll}</div>
+        <div style="font-size:.8rem;color:#6b7280;margin-top:6px">전체 누적</div>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+        <div style="font-size:.92rem;font-weight:700;color:var(--navy)">날짜별 방문 횟수</div>
+        <button onclick="loadVisitorStats()" style="font-size:.76rem;padding:5px 12px;background:#f0f9ff;color:var(--blue);border:1px solid #bae6fd;border-radius:6px;cursor:pointer;font-weight:700;font-family:inherit">🔄 새로고침</button>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr style="background:var(--bg)">
+            <th style="padding:10px 20px;text-align:left;font-size:.76rem;color:#6b7280;font-weight:700;border-bottom:1px solid var(--border)">날짜</th>
+            <th style="padding:10px 20px;text-align:center;font-size:.76rem;color:#6b7280;font-weight:700;border-bottom:1px solid var(--border)">방문 횟수</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows||`<tr><td colspan="2" style="padding:40px;text-align:center;color:#9ca3af;font-size:.86rem">아직 방문 데이터가 없습니다.</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+}
+
 // ── CHINA NEWS FETCHER ──
 async function fetchChinaNews(force){
-  if((chinaNewsLoaded || chinaNewsLoading) && !force) return;
+  if(!force && (chinaNewsLoaded || chinaNewsLoading)) return;
   chinaNewsLoading = true;
+  chinaNewsLoaded  = false;
+  chinaNewsData    = [];
   if(currentPage==='blog') render();
-  try {
-    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://www.ajunews.com/rss/china.xml');
-    const res = await fetch(proxyUrl, {signal: AbortSignal.timeout(10000)});
-    if(!res.ok) throw new Error('HTTP '+res.status);
-    const xml = await res.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(xml, 'text/xml');
-    const items = Array.from(doc.querySelectorAll('item'));
-    chinaNewsData = items.map((item, idx) => {
-      const title = item.querySelector('title')?.textContent?.trim() || '';
-      const linkEl = item.querySelector('link');
-      const link = linkEl ? (linkEl.nextSibling?.textContent?.trim() || linkEl.textContent?.trim()) : '';
-      const pubDate = item.querySelector('pubDate')?.textContent?.trim() || '';
-      const descEl = item.querySelector('description');
-      const descHtml = descEl?.textContent || '';
-      const tmp = document.createElement('div');
-      tmp.innerHTML = descHtml;
-      const imgEl = tmp.querySelector('img');
-      const image = imgEl?.src || item.querySelector('image url')?.textContent?.trim() || '';
-      const plainText = (tmp.textContent||'').trim().replace(/\s+/g,' ');
-      const excerpt = plainText.substring(0,130) + (plainText.length>130?'...':'');
-      const d = new Date(pubDate);
-      const date = isNaN(d.getTime()) ? pubDate.substring(0,10) : d.toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\s/g,'');
-      const cleanTitle = title.replace(/^\[(속보|종합|단독|연합)\]\s*/,'');
-      return {id:idx+1, title:cleanTitle||title, excerpt, content:descHtml, date, icon:'🇨🇳', tag:'중국 소식', url:link||'https://www.ajunews.com/china', image};
-    }).filter(n=>n.title);
-    chinaNewsLoaded = true;
-    console.log('[UWS] China news loaded:', chinaNewsData.length, 'articles');
-  } catch(e) {
-    console.error('[UWS] fetchChinaNews error:', e);
-    chinaNewsLoaded = false;
+
+  const RSS = 'https://www.ajunews.com/rss/china.xml';
+
+  // rss2json JSON 응답 → 뉴스 배열
+  function fromJSON(items){
+    return items.slice(0,5).map((it, i) => {
+      const title   = (it.title||'').replace(/^\[(속보|종합|단독|연합)\]\s*/,'').trim();
+      const url     = it.link || it.guid || 'https://www.ajunews.com/china';
+      const tmp     = document.createElement('div');
+      tmp.innerHTML = it.description || it.content || '';
+      const text    = (tmp.textContent||'').trim().replace(/\s+/g,' ');
+      const excerpt = text.slice(0,120) + (text.length>120 ? '...' : '');
+      const d       = new Date(it.pubDate||'');
+      const date    = isNaN(d.getTime()) ? (it.pubDate||'').slice(0,10)
+        : d.toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\s/g,'');
+      return {id:i+1, title, url, excerpt, date, image:'', icon:'\uD83C\uDDE8\uD83C\uDDF3', tag:'\uc911\uad6d \uc18c\uc2dd'};
+    }).filter(n => n.title);
   }
+
+  // XML DOMParser 응답 → 뉴스 배열
+  function fromXML(xml){
+    const doc   = new DOMParser().parseFromString(xml, 'text/xml');
+    const items = Array.from(doc.querySelectorAll('item'));
+    return items.slice(0,5).map((item, i) => {
+      const title   = (item.querySelector('title')?.textContent||'').replace(/^\[(속보|종합|단독|연합)\]\s*/,'').trim();
+      const lText   = item.querySelector('link')?.textContent?.trim();
+      const gText   = item.querySelector('guid')?.textContent?.trim();
+      const url     = (lText&&lText.startsWith('http')?lText:null) || gText || 'https://www.ajunews.com/china';
+      const desc    = item.querySelector('description')?.textContent||'';
+      const tmp     = document.createElement('div'); tmp.innerHTML = desc;
+      const text    = (tmp.textContent||'').trim().replace(/\s+/g,' ');
+      const excerpt = text.slice(0,120) + (text.length>120 ? '...' : '');
+      const raw     = item.querySelector('pubDate')?.textContent?.trim()||'';
+      const d       = new Date(raw);
+      const date    = isNaN(d.getTime()) ? raw.slice(0,10)
+        : d.toLocaleDateString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit'}).replace(/\s/g,'');
+      return {id:i+1, title, url, excerpt, date, image:'', icon:'\uD83C\uDDE8\uD83C\uDDF3', tag:'\uc911\uad6d \uc18c\uc2dd'};
+    }).filter(n => n.title);
+  }
+
+  // 시도 순서: rss2json → corsproxy → allorigins
+  const SOURCES = [
+    async () => {
+      const r = await fetch(
+        'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(RSS),
+        {signal: AbortSignal.timeout(12000)}
+      );
+      if(!r.ok) throw new Error('rss2json HTTP ' + r.status);
+      const j = await r.json();
+      if(j.status !== 'ok') throw new Error('rss2json: ' + (j.message||'error'));
+      const data = fromJSON(j.items||[]);
+      if(!data.length) throw new Error('rss2json: empty result');
+      return data;
+    },
+    async () => {
+      const r = await fetch(
+        'https://corsproxy.io/?' + encodeURIComponent(RSS),
+        {signal: AbortSignal.timeout(10000)}
+      );
+      if(!r.ok) throw new Error('corsproxy HTTP ' + r.status);
+      const xml = await r.text();
+      if(!xml.includes('<item')) throw new Error('corsproxy: no items in XML');
+      const data = fromXML(xml);
+      if(!data.length) throw new Error('corsproxy: empty result');
+      return data;
+    },
+    async () => {
+      const r = await fetch(
+        'https://api.allorigins.win/raw?url=' + encodeURIComponent(RSS),
+        {signal: AbortSignal.timeout(10000)}
+      );
+      if(!r.ok) throw new Error('allorigins HTTP ' + r.status);
+      const xml = await r.text();
+      if(!xml.includes('<item')) throw new Error('allorigins: no items in XML');
+      const data = fromXML(xml);
+      if(!data.length) throw new Error('allorigins: empty result');
+      return data;
+    },
+  ];
+
+  for(const src of SOURCES){
+    try {
+      chinaNewsData   = await src();
+      chinaNewsLoaded = true;
+      console.log('[UWS] China news loaded:', chinaNewsData.length);
+      break;
+    } catch(e){
+      console.warn('[UWS]', e.message);
+    }
+  }
+
+  if(!chinaNewsLoaded) console.error('[UWS] China news: all sources failed');
   chinaNewsLoading = false;
   if(currentPage==='blog') render();
 }
@@ -3921,6 +4148,8 @@ async function fetchChinaNews(force){
 // ── BOOT ──
 currentPage = parseHash();
 render();
+// Record this page visit (session-deduped, Firebase + localStorage)
+recordVisit();
 // Initialize Firebase inquiry loading (async)
 initInquiries();
 // Load admin content overrides from Firebase (async, re-renders when done)
