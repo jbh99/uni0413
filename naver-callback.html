@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>네이버 로그인 처리 중...</title>
+<style>
+  body{margin:0;font-family:'Noto Sans KR',-apple-system,BlinkMacSystemFont,sans-serif;background:#f8fafc;color:#1e293b;display:flex;align-items:center;justify-content:center;min-height:100vh}
+  .box{text-align:center;padding:32px;max-width:360px}
+  .spinner{width:42px;height:42px;border:4px solid #e2e8f0;border-top-color:#03c75a;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 20px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  h1{font-size:1rem;font-weight:700;margin:0 0 6px;color:#0c2340}
+  p{font-size:.84rem;color:#64748b;margin:0;line-height:1.6}
+  .err{color:#dc2626;font-size:.82rem;margin-top:12px}
+</style>
+</head>
+<body>
+  <div class="box">
+    <div class="spinner" aria-hidden="true"></div>
+    <h1>네이버 로그인 처리 중</h1>
+    <p>잠시만 기다려주세요...</p>
+    <div id="err" class="err" style="display:none"></div>
+  </div>
+<script>
+(function(){
+  'use strict';
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const state = params.get('state');
+  const error = params.get('error');
+  const errorDesc = params.get('error_description');
+  const expectedState = sessionStorage.getItem('naver_oauth_state');
+
+  function send(payload){
+    try{
+      if(window.opener && !window.opener.closed){
+        window.opener.postMessage({source:'naver-oauth', ...payload}, window.location.origin);
+      }
+    }catch(e){}
+    setTimeout(()=>{ try{ window.close(); }catch(e){} }, 600);
+  }
+
+  function showErr(msg){
+    const el = document.getElementById('err');
+    if(el){ el.style.display='block'; el.textContent = msg; }
+  }
+
+  if(error){
+    showErr('네이버 로그인이 취소되거나 실패했습니다.');
+    send({ok:false, error: errorDesc || error});
+    return;
+  }
+  if(!code || !state){
+    showErr('인증 코드를 받지 못했습니다.');
+    send({ok:false, error:'Missing code/state'});
+    return;
+  }
+  if(!expectedState || expectedState !== state){
+    showErr('보안 검증에 실패했습니다 (state mismatch).');
+    send({ok:false, error:'State mismatch — CSRF protection triggered'});
+    return;
+  }
+  sessionStorage.removeItem('naver_oauth_state');
+
+  fetch('/.netlify/functions/naver-callback', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({code, state})
+  })
+  .then(r => r.json())
+  .then(data => {
+    if(!data || !data.ok){
+      showErr(data && data.error ? data.error : '서버 처리 실패');
+      send({ok:false, error: data && data.error || 'Server error'});
+      return;
+    }
+    send({ok:true, profile: data.profile});
+  })
+  .catch(e => {
+    showErr('네트워크 오류: ' + (e && e.message || ''));
+    send({ok:false, error: e && e.message || 'Network error'});
+  });
+})();
+</script>
+</body>
+</html>
