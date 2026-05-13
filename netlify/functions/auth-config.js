@@ -21,6 +21,7 @@
 // Restrictions(HTTP referrer)로 강제됩니다.
 
 const ALLOWED_ORIGINS = [
+  'https://unws2.netlify.app',
   'https://unws.netlify.app',
   'http://localhost:8080',
   'http://localhost:3000',
@@ -73,7 +74,7 @@ exports.handler = async (event) => {
 
   const naver = {
     clientId: env.NAVER_CLIENT_ID || '',
-    callbackUrl: env.NAVER_CALLBACK_URL || `${origin || 'https://unws.netlify.app'}/naver-callback.html`,
+    callbackUrl: env.NAVER_CALLBACK_URL || `${origin || 'https://unws2.netlify.app'}/naver-callback.html`,
   };
 
   const ready = {

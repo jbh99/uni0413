@@ -14,15 +14,28 @@
 //   { ok: true, profile: { id, email, name, nickname, profile_image } }
 
 const ALLOWED_ORIGINS = [
+  'https://unws2.netlify.app',
   'https://unws.netlify.app',
   'http://localhost:8080',
   'http://localhost:3000',
   'http://127.0.0.1:8080',
 ];
+// Netlify deploy-preview / branch-deploy 서브도메인도 허용
+// (예: deploy-preview-3--unws2.netlify.app, main--unws2.netlify.app)
+const ALLOWED_HOSTNAME_SUFFIXES = [
+  '--unws2.netlify.app',
+  '--unws.netlify.app',
+];
 
 function isAllowedOrigin(origin) {
   if (!origin) return false;
-  return ALLOWED_ORIGINS.some((allowed) => origin === allowed || origin.startsWith(allowed));
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  try {
+    const u = new URL(origin);
+    if (u.protocol === 'https:' && ALLOWED_HOSTNAME_SUFFIXES.some((s) => u.hostname.endsWith(s))) return true;
+    if (['localhost', '127.0.0.1'].includes(u.hostname)) return true;
+  } catch (_) {}
+  return false;
 }
 
 exports.handler = async (event) => {
@@ -53,10 +66,17 @@ exports.handler = async (event) => {
   const clientId = process.env.NAVER_CLIENT_ID;
   const clientSecret = process.env.NAVER_CLIENT_SECRET;
   if (!clientId || !clientSecret) {
+    const missing = [
+      !clientId && 'NAVER_CLIENT_ID',
+      !clientSecret && 'NAVER_CLIENT_SECRET',
+    ].filter(Boolean).join(', ');
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ ok: false, error: 'Naver credentials not configured on server' }),
+      body: JSON.stringify({
+        ok: false,
+        error: `Netlify 환경변수 누락: ${missing}. Site settings → Environment variables 에서 추가하고 재배포하세요.`,
+      }),
     };
   }
 
